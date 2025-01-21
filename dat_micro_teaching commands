@@ -1,0 +1,120 @@
+#dat_micro_teaching commands - bash (HPC)/python
+
+#start interactive session
+srun  #interactive session details here#
+
+#change directory
+cd username/file1/file2/name_of_file
+
+#copy files from one location to another
+cp file_path_for_file_to_be_copied file_path_to_dir_where_file_should_go
+
+#copy whole directory, subdirectory recursively
+cp -R file_path_for_dir_to_be_copied file_path_to_where_dir_should_go
+
+#copy multiple folders with pattern name to a new folder (result_folder).
+find dir.../test_fastp_trimmed -type d -name "results_output*" -exec cp -r {} dir/result_folder/ \;
+
+#remove the text (_remove_this_text) from the end of each line a file (filename.txt)
+sed -i 's/_remove_this_text$//' filename.txt
+
+#load software modules (high performance computing cluster)
+module load Python/version_number
+module load Anaconda3/version_number
+module load Mamba/version_number
+
+#run sbatch
+sbatch --array=1-2 script_name.sbatch #runs samples 1-2
+
+sbatch –-array=1-100 script_name.sbatch #runs samples 1-100
+
+#see where script is in queue
+squeue --user=your_user_name
+#########################################
+
+#conda
+#create conda environment and load
+conda create --name name_of_environment
+source activate name_of_environment #or conda activate
+
+#create conda environment with package
+conda create -n picrust2 -c bioconda -c conda-forge picrust2=2.5.3
+
+#deactivate conda environment
+conda deactivate
+
+#conda install package (install into a environment, not home!)
+conda install bioconda::lefse
+
+#conda remove environment
+conda remove -n environment_name --all
+
+#get info about conda environments available
+conda info --envs
+
+##############################
+#Run metaphlan4
+#load module OR conda env
+
+module load MetaPhlAn/VERSION_NUM
+conda activate metaphlan
+
+metaphlan metagenome_1.fastq,metagenome_2.fastq --bowtie2out metagenome.bowtie2.bz2 --nproc 5 --input_type fastq -o profiled_metagenome.txt
+
+#merge metaphlan abundance results
+cd dir_where_results_are.../Combined_profile_results
+merge_metaphlan_tables.py *_profile.txt > merged_abundance_table.txt
+
+#generate species-only abundance table
+grep -E "s__|11196" merged_abundance_table.txt \
+| grep -v "t__" \
+| sed "s/^.*|//g" \
+| sed "s/11196[0-9]*-//g" \
+> merged_abundance_table_species.txt
+#################################
+cd dir.../working_dir
+
+#1. index contigs with bt2 - create index for contigs file
+#2. align reads to contigs file using bt2 - make bam file from the alignment
+#3. use jgi----script to create a depth file from bam file
+#4. run metabat2 - using depth file and contigs file as inputs.
+
+#step 1 - index the contigs file- output makes "fasta_contigs_index.3.bt2"
+module load Bowtie2/VERSION_NUM
+bowtie2-build contigs.fasta fasta_contigs_index
+
+#step 2 - align paired end reads to contig file - makes alignments.sam
+bowtie2 -x fasta_contigs_index -1 Mock_Sample_R1_001_fastp.fastq.gz -2 Mock_Sample_R2_001_fastp.fastq.gz -S alignments.sam
+
+#step 3 - convert sam to bam - makes alignments.bam 
+module load Bio-SamTools/VERSION_NUM
+samtools view -bS alignments.sam > alignments.bam
+
+#sort the BAM file - makes alignments.sorted.bam
+samtools sort alignments.bam alignments.sorted
+samtools sort Mock_Sample_alignments.bam Mock_Sample_alignments.sorted.bam
+
+#step 4 - index the sorted bam file - makes alignments.sorted.bam.bai
+samtools index alignments.sorted.bam
+
+#step 5 - prepare the depth file - makes depth.txt
+module load Anaconda3/VERSION_NUM
+source activate metabat2_env 
+
+jgi_summarize_bam_contig_depths --outputDepth depth.txt alignments.sorted.bam
+
+#step 6 - run metabat2 - makes bins
+metabat2 -i contigs.fasta -a depth.txt -o mock_bins
+
+#step 7 - evaluate bins with QUAST
+module load QUAST/VERSION_NUM
+quast.py dir_to_genome_bins/step6/GenomeBins/*.fa -o dir_to_genome_bins/step6/GenomeBins/QUAST_output
+
+#step 8 - run PROKKA
+module load Anaconda3/VERSION_NUM
+source activate prokka
+prokka --version
+
+prokka --outdir input_dir/S1_bin1 --prefix S_01_mock_bins.1.fa --centre X --compliant S_01_contigs.fasta
+
+
